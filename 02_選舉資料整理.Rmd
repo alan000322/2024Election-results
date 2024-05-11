@@ -1,0 +1,291 @@
+---
+title: "02_選舉資料整理"
+author: "chiatzu"
+date: '2024-01-14'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+# Packages
+```{r}
+library(tidyverse)
+library(stringr)
+
+library(sf)
+
+```
+
+# 合併資料 - df_total
+```{r}
+df_total <- df %>%
+ rename(c("台灣民眾黨" = "柯文哲得票數", "中國國民黨" = "侯友宜得票數", "民主進步黨" = "賴清德得票數")) %>%
+  mutate(type = "總統") %>% select(type, everything()) %>%
+  bind_rows(
+    df2 %>%
+      mutate(type = "不分區") 
+  ) %>% 
+  bind_rows(
+    df3 %>%
+      mutate(type = "分區") 
+  ) %>%
+  #head(4) #%>%
+  group_by(type, 縣市, 鄉鎮市區別, 村里別) %>%
+  summarize( across(c(台灣民眾黨:選舉人數G, 小民參政歐巴桑聯盟:勞動黨), sum) ) %>%
+  ungroup() %>%
+  mutate(鄉鎮市區別 = str_trim(鄉鎮市區別))#%>% view()
+
+
+
+df_total
+```
+
+# 村里比較df - df_total_village
+```{r}
+df_total_village <- df_total %>%
+  group_by(type, 縣市, 鄉鎮市區別, 村里別) %>%
+  summarize( across(c(台灣民眾黨:選舉人數G, 小民參政歐巴桑聯盟:勞動黨), sum) ) %>%
+  ungroup() %>% 
+  mutate(across(c(5:7, 15:28), ~ 100 * ./選舉人數G, .names = "催票率_{col}")) %>%
+  mutate(across(c(5:7, 15:28), ~ 100 * ./有效票數A, .names = "得票率_{col}")) 
+
+df_total_village %>% head(2)
+
+```
+
+
+# 村里sf
+```{r}
+
+sf_village <- st_read(dsn = "../poll/111年12月行政區人口統計_村里_SHP/", layer = "111年12月行政區人口統計_村里", quiet = T) %>%
+  mutate(across(where(is.character), ~iconv(., from = "BIG5", to = "UTF8"))) %>% # 轉換編碼UTF-8變成中文
+  rename_with(~str_to_lower(.), everything()) %>% #欄位名改小寫
+  mutate(across(where(is.double), ~if_else(is.na(.),as.double(0),.))) %>%
+  st_set_crs(3826) %>%  # 空間座標系 - 臺灣
+  st_transform(4326) %>% # 調整座標系 - global WGS84
+  select(-matches("_id"), -info_time) # 刪除一些欄位
+
+sf_village 
+```
+
+
+# 鄉鎮市區比較df - df_total_town
+```{r}
+df_total_town <- df_total %>%  
+  group_by(type, 縣市, 鄉鎮市區別) %>%
+  summarize( across(c(台灣民眾黨:選舉人數G, 小民參政歐巴桑聯盟:勞動黨), sum) ) %>%
+  ungroup() %>%
+  mutate(across(c(4:6, 14:27), ~ 100 * ./選舉人數G, .names = "催票率_{col}")) %>%
+  mutate(across(c(4:6, 14:27), ~ 100 * ./有效票數A, .names = "得票率_{col}"))
+
+df_total_town %>% head(2)
+```
+
+
+# 鄉鎮市區sf
+```{r}
+
+sf_town <- st_read(dsn = "../poll/111年12月行政區人口統計_鄉鎮市區_SHP/", layer = "111年12月行政區人口統計_鄉鎮市區", quiet = T) %>%
+  mutate(across(where(is.character), ~iconv(., from = "BIG5", to = "UTF8"))) %>% # 轉換編碼UTF-8變成中文
+  rename_with(~str_to_lower(.), everything()) %>% #欄位名改小寫
+  mutate(across(where(is.double), ~if_else(is.na(.),as.double(0),.))) %>%
+  st_set_crs(3826) %>%  # 空間座標系 - 臺灣
+  st_transform(4326) %>% # 調整座標系 - global WGS84
+  select(-matches("_id"), -info_time) #%>% # 刪除一些欄位
+sf_town
+```
+
+
+
+# 縣市比較df - df_county
+```{r}
+df_county  <- df_total %>%   
+  group_by(type, 縣市) %>%
+  summarize( across(c(台灣民眾黨:選舉人數G, 小民參政歐巴桑聯盟:勞動黨), sum) ) %>%
+  ungroup() %>%
+  mutate(across(c(3:5, 13:26), ~ 100 * ./選舉人數G, .names = "催票率_{col}")) %>%
+  mutate(across(c(3:5, 13:26), ~ 100 * ./有效票數A, .names = "得票率_{col}")) 
+
+df_county %>% head(2)
+```
+
+
+
+
+
+
+# BAK
+
+```{r}
+df_total %>%
+  group_by(縣市, 鄉鎮市區別, 村里別) %>%
+  filter(any(type == "分區" & !is.na(台灣民眾黨))) %>% ungroup() %>%
+  filter(type == '分區' | type == '總統') %>%
+  filter(村里別 != '村里總計') %>%
+  group_by(縣市, 鄉鎮市區別, 村里別)  %>%
+  filter(
+    any(民主進步黨 > 台灣民眾黨) && any(台灣民眾黨 > 民主進步黨)
+  ) %>% ungroup() %>% 
+  mutate(across(c(5:7, 15:28), ~ 100 * ./選舉人數G, .names = "催票率_{col}")) %>%
+  mutate(across(c(5:7, 15:28), ~ 100 * ./有效票數A, .names = "得票率_{col}")) %>%
+  # pivot_longer(cols = starts_with("催票率_"), 
+  #              names_to = "政黨", 
+  #              values_to = "催票率") %>% filter(!is.na(催票率)) %>%
+  ggplot() + aes(x=催票率_台灣民眾黨, y=催票率_民主進步黨, color=type, label=村里別 ) +
+  # geom_point() + 
+  geom_text() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  theme_classic()
+  
+
+
+
+df_total %>% 
+  filter(縣市 == '連江縣') %>% arrange(村里別) %>% view()
+```
+
+```{r}
+df3 %>%
+  filter( 鄉鎮市區別 == '蘆竹區') #%>% view()#%>% colnames()
+```
+
+
+
+```{r fig.width=3, fig.height=3}
+df_total %>%  
+  group_by(type, 縣市, 鄉鎮市區別) %>%
+  summarize( across(c(台灣民眾黨:選舉人數G, 小民參政歐巴桑聯盟:勞動黨), sum) ) %>%
+  ungroup() %>%
+  mutate(across(c(4:6, 14:27), ~ 100 * ./選舉人數G, .names = "催票率_{col}")) %>%
+  mutate(across(c(4:6, 14:27), ~ 100 * ./有效票數A, .names = "得票率_{col}")) %>%
+  filter(type == '分區' | type == '總統')  %>%
+  filter(縣市 == "桃園市") %>%
+  select(type, 縣市, 鄉鎮市區別, 催票率_民主進步黨, 催票率_中國國民黨, 催票率_台灣民眾黨) %>%
+  pivot_longer(c(催票率_民主進步黨,催票率_中國國民黨 ,催票率_台灣民眾黨), names_to = "政黨", values_to = "催票率")  %>%
+  ggplot() + aes(x=政黨, y=催票率, label=鄉鎮市區別, color=type ) +
+  # geom_point() +
+  geom_text() 
+  labs(
+    title = "民進黨不分區與總統票一致",
+    subtitle = ""
+    ) +
+  xlim(0, 60) + 
+  ylim(0, 60) + 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  theme_classic() + th
+  
+  
+  
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+president <- df %>%
+  select(縣市, 鄉鎮市區別, 村里別, ends_with("催票率") ) %>%
+  filter(`鄉鎮市區別` != "總計" & `村里別`=='村里總計') 
+
+  # filter(侯友宜催票率 > 賴清德催票率 & 柯文哲催票率 < 侯友宜催票率 ) %>%
+  ggplot() + aes(x=`柯文哲催票率` , y= `賴清德催票率`) +
+  geom_point()
+  pivot_longer(-c(`縣市`, `鄉鎮市區別`, `村里別`), names_to = "總統候選人", values_to = "催票率") %>%
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+legislator <- df2 %>%
+  select(縣市, 鄉鎮市區別, 村里別, ends_with("催票率") )  %>%
+  filter(`鄉鎮市區別` != "總計" & `村里別`=='村里總計') 
+  # pivot_longer(-c(`縣市`, `鄉鎮市區別`, `村里別`), names_to = "政黨", values_to = "政黨催票率") %>%
+  ggplot() + aes(x=`台灣民眾黨催票率` , y= `民主進步黨催票率`) +
+  geom_point()
+  
+```
+
+
+```{r fig.height=3, fig.width=3}
+president %>%
+  pivot_longer(-c(`縣市`, `鄉鎮市區別`, `村里別`), names_to = "政黨", values_to = "政黨催票率") %>%
+  mutate(
+    政黨 = case_when(
+      政黨 == "柯文哲催票率" ~ "台灣民眾黨催票率",
+      政黨 == "賴清德催票率" ~ "民主進步黨催票率",
+      政黨 == "侯友宜催票率" ~ "中國國民黨催票率",
+      )
+    ) %>% mutate( `選舉類別` = "總統" ) %>%
+  bind_rows(
+    legislator %>%
+      pivot_longer(-c(`縣市`, `鄉鎮市區別`, `村里別`), names_to = "政黨", values_to = "政黨催票率") %>% 
+      mutate( `選舉類別` = "不分區" )
+  ) %>%
+  pivot_wider(names_from = `政黨`, values_from = `政黨催票率`) %>%
+  ggplot() + 
+  aes(x=台灣民眾黨催票率, y=中國國民黨催票率, shape=選舉類別, color=選舉類別) +
+  geom_point() + 
+  theme_classic() +
+  th +
+  theme(legend.position = "bottom")
+```
+

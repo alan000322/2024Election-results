@@ -1,0 +1,1059 @@
+---
+title: "03_做圖"
+author: "chiatzu"
+date: '2024-01-18'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Packages
+```{r}
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(showtext)
+library(ggthemes)
+library(patchwork)
+
+library(sf)
+
+
+
+library(hrbrthemes)
+library(GGally)
+library(viridis)
+
+library(httr)
+library(rvest) # for traversing html structure
+library(jsonlite)
+
+showtext_auto(enable = TRUE)
+font_add("GenJyuuGothic Heavy","GenJyuuGothic-Heavy.ttf")
+font_add("GenJyuuGothic Medium","GenJyuuGothic-Medium.ttf")
+font_add("GenJyuuGothic Light", "GenJyuuGothic-Light.ttf")
+font_add("jf-jinxuan-3.0 ExtraBold","jf-jinxuan-3.0-extrabold.otf")
+font_add("jf-jinxuan-3.0 medium","jf-jinxuan-3.0-medium.otf")
+font_add("jf-jinxuan-3.0 Book", "jf-jinxuan-3.0-book.otf")
+
+
+
+th <- 
+  theme(
+    plot.title = element_text(size=28, family="jf-jinxuan-3.0 ExtraBold"),
+    plot.subtitle = element_text(size=17,family="jf-jinxuan-3.0 medium", margin = margin(7, 1, 20, 0) ),
+    axis.title.x = element_text(size=16,family="jf-jinxuan-3.0 ExtraBold"),
+    axis.title.y = element_text(size=16,family="jf-jinxuan-3.0 ExtraBold"),
+    axis.text = element_text(size=14,family="jf-jinxuan-3.0 medium"),
+    legend.text = element_text(size=16,family="jf-jinxuan-3.0 medium"),
+    legend.title = element_text(size=16,family="jf-jinxuan-3.0 medium"),
+    plot.caption  = element_text(color="#888888",size=8,family="jf-jinxuan-3.0 medium", ), #hjust = 1.1, vjust=-7
+    plot.title.position = "plot", # 讓字從最左邊出現
+    plot.margin = margin(2.5, 2.5, 2.5, 2.5, "lines"), # 調整主圖表外的margin
+    
+    legend.background = element_rect(fill = "#DDDDDD", color="black"),
+    plot.background = element_rect( fill = "#DDDDDD", colour = "#272C33", size = 10 ),
+    panel.background = element_rect(fill = "#DDDDDD"), 
+  )
+
+
+```
+
+## 地圖測試
+```{r}
+# 設定經緯度的範圍
+xlim <- c(119.5, 122.3)
+ylim <- c(21.5,25.8)
+
+p1 <- sf_town %>%
+  left_join(
+    df_total_town %>%
+    select(county=縣市, town=鄉鎮市區別, everything())
+    ) %>% #select(county, town) %>% 
+  filter( type == '總統') %>%
+  filter( county != "金門縣" & county != "連江縣" & county != "澎湖縣") %>% 
+  ggplot() + aes(fill = 催票率_台灣民眾黨) + geom_sf(color = NA)  +
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+  scale_fill_gradient(low = "white", high = "#28C8C8") + ggthemes::theme_map() +
+  labs(title = "2024 柯文哲選舉得票率") +
+  theme(legend.position="bottom") 
+
+sf_town %>%
+  left_join(
+    df_total_town %>%
+    select(county=縣市, town=鄉鎮市區別, everything())
+    ) %>% #select(county, town) %>% 
+  filter( type == '總統') %>%
+  filter( county == "金門縣") %>% 
+  ggplot() + aes(fill = 催票率_台灣民眾黨) + geom_sf(color = NA)  +
+  scale_fill_gradient(low = "white", high = "#28C8C8") + ggthemes::theme_map() +
+  labs(title = "2024 柯文哲選舉得票率") +
+  theme(legend.position="bottom") 
+```
+
+
+
+## 縣市 - 得票率排行
+```{r fig.width=3, fig.height=3}
+p <- df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  group_by(縣市) %>%
+  mutate(Total_DPP = sum(得票率[政黨 == '得票率_民主進步黨'])) %>%
+  ungroup() %>%
+  mutate(縣市 = reorder(縣市, Total_DPP)) %>%
+  arrange(-Total_DPP) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#000095", "#28C8C8", "#1B9431")) +
+  theme_classic() +
+  # theme(legend.position = "bottom") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="jf-jinxuan-3.0 medium"))
+
+p1 <- df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  filter(政黨 == "得票率_民主進步黨") %>%
+  arrange(-得票率) %>% head(10) %>%
+  mutate(縣市 = reorder(縣市, 得票率)) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#1B9431")) +
+  labs(
+    title = "賴蕭配南高得票率最高",
+    y = "得票率最高之前十縣市",
+    x= ""
+  ) +
+  theme_minimal() +
+  xlim(0, 65) +
+  theme(legend.position = "none")+
+  theme(text = element_text(family="jf-jinxuan-3.0 medium"))+
+  theme(    plot.title.position = "plot") # 讓字從最左邊出現
+
+p2 <- df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  filter(政黨 == "得票率_台灣民眾黨") %>%
+  arrange(-得票率) %>% head(10) %>%
+  mutate(縣市 = reorder(縣市, 得票率)) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#28C8C8")) +
+  labs(
+    title = "柯盈配桃竹得票率最高",
+    y= "",
+    x= ""
+  ) +
+  theme_minimal() +
+  xlim(0, 65) +
+  theme(legend.position = "none")+
+  theme(axis.title  = element_blank())+
+  theme(text = element_text(family="jf-jinxuan-3.0 medium")) +
+  theme(    plot.title.position = "plot") # 讓字從最左邊出現
+
+p3 <- df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  filter(政黨 == "得票率_中國國民黨") %>%
+  arrange(-得票率) %>% head(10) %>%
+  mutate(縣市 = reorder(縣市, 得票率)) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#000095")) +
+  labs(
+    title = "侯康配花東、離島得票碾壓",
+    y= "",
+    x= ""
+  ) +
+  theme_minimal() +
+  xlim(0, 65) +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="jf-jinxuan-3.0 medium")) +
+  theme(    plot.title.position = "plot") # 讓字從最左邊出現
+
+
+(  ( (p1+p2+p3) / p  ) +  
+    plot_annotation(
+      # title = '2024總統大選各縣市得票率解析',
+      caption =  '註：橫軸皆為得票率（%）。' ,
+      theme = theme(
+        plot.title = element_text(size = 30,family="jf-jinxuan-3.0 medium" ) 
+        )
+      ) 
+  ) & 
+  theme(
+    plot.background = element_rect(fill = "#DDDDDD", colour = NA),
+    panel.background = element_rect(fill = "#DDDDDD", colour = NA),)
+  
+```
+
+
+### 得票率統整
+patchwork統整
+```{r fig.width=3, fig.height=3}
+df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  group_by(縣市) %>%
+  mutate(Total_DPP = sum(得票率[政黨 == '得票率_民主進步黨'])) %>%
+  ungroup() %>%
+  mutate(縣市 = reorder(縣市, Total_DPP)) %>%
+  arrange(-Total_DPP) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#000095", "#28C8C8", "#1B9431")) +
+  labs(
+    title="總統選舉各縣市得票率統整", 
+    subtitle="",
+    x="得票率(%)",
+    y=""
+  ) +
+  theme_classic()  + th +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size=36, family="jf-jinxuan-3.0 ExtraBold", margin = margin(15, 0, 0, 0)),
+    plot.subtitle = element_text(size=17,family="jf-jinxuan-3.0 medium", margin = margin(7, 1, 15, 0) ),
+    # legend.text = element_text(size=12,family="jf-jinxuan-3.0 medium"),
+  )
+```
+
+
+### 侯
+```{r fig.width=3, fig.height=3}
+df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  filter(政黨 == "得票率_中國國民黨") %>%
+  arrange(-得票率) %>% head(10) %>%
+  mutate(縣市 = reorder(縣市, 得票率)) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#000095")) +
+  labs(
+    title = "侯康配：花東金馬得票碾壓",
+    subtitle = "侯康配得票率前十高的縣市",
+    y= "",
+    x= ""
+  ) +
+  theme_bw() +
+  xlim(0, 65) +
+  theme(legend.position = "none") + th +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size=36, family="jf-jinxuan-3.0 ExtraBold", margin = margin(15, 0, 0, 0)),
+    plot.subtitle = element_text(size=17,family="jf-jinxuan-3.0 medium", margin = margin(7, 1, 15, 0) ),
+    # legend.text = element_text(size=12,family="jf-jinxuan-3.0 medium"),
+  )
+```
+
+
+### 賴
+```{r fig.width=3, fig.height=3}
+df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  filter(政黨 == "得票率_民主進步黨") %>%
+  arrange(-得票率) %>% head(10) %>%
+  mutate(縣市 = reorder(縣市, 得票率)) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#1B9431")) +
+  labs(
+    title = "賴蕭配南高得票率最高",
+    subtitle = "賴蕭配得票率前十高的縣市",
+    # y = "得票率最高之前十縣市",
+    x= ""
+  ) +
+  theme_minimal() +
+  xlim(0, 65) +
+  theme(legend.position = "none") + th +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size=36, family="jf-jinxuan-3.0 ExtraBold", margin = margin(15, 0, 0, 0)),
+    plot.subtitle = element_text(size=17,family="jf-jinxuan-3.0 medium", margin = margin(7, 1, 15, 0) ),
+    # legend.text = element_text(size=12,family="jf-jinxuan-3.0 medium"),
+  )
+```
+
+
+### 柯
+```{r fig.width=3, fig.height=3}
+df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  filter(政黨 == "得票率_台灣民眾黨") %>%
+  arrange(-得票率) %>% head(10) %>%
+  mutate(縣市 = reorder(縣市, 得票率)) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#28C8C8")) +
+  labs(
+    title = "柯盈配：桃竹得票率最高",
+    subtitle = "柯盈配得票率前十高的縣市",
+    y= "",
+    x= ""
+  ) +
+  theme_minimal() +
+  xlim(0, 65) +
+  theme(legend.position = "none") + th +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size=36, family="jf-jinxuan-3.0 ExtraBold", margin = margin(15, 0, 0, 0)),
+    plot.subtitle = element_text(size=17,family="jf-jinxuan-3.0 medium", margin = margin(7, 1, 15, 0) ),
+    # legend.text = element_text(size=12,family="jf-jinxuan-3.0 medium"),
+  )
+```
+
+### 綜合
+```{r fig.width=3, fig.height=3}
+df_county %>%
+  filter( type == "總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率))  %>%
+  select(type, 縣市, 政黨, 得票率 ) %>%
+  group_by(縣市) %>%
+  mutate(Total_DPP = sum(得票率[政黨 == '得票率_民主進步黨'])) %>%
+  ungroup() %>%
+  mutate(縣市 = reorder(縣市, Total_DPP)) %>%
+  arrange(-Total_DPP) %>%
+  ggplot() + aes(x=得票率, y=縣市, fill=政黨) +
+  geom_col( ) +
+  scale_fill_manual(values=c("#000095", "#28C8C8", "#1B9431")) +
+  labs(
+    title="2024總統大選得票率分佈",
+    subtitle="侯得票"
+  )
+  theme_classic() +
+  # theme(legend.position = "bottom") +
+  theme(legend.position = "none") + th
+```
+
+
+
+## 分裂投票（不分區v.s.總統）
+
+### 綠
+```{r fig.width=3, fig.height=3}
+d1 <- df_total_town %>%
+  filter(type=="不分區" | type =="總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率)) %>%
+  select(type, 縣市, 鄉鎮市區別, 政黨, 得票率) %>%
+  filter(政黨 == "得票率_民主進步黨") %>%
+  pivot_wider(names_from = "type", values_from = "得票率") %>%
+  filter(鄉鎮市區別 != "總計")
+
+
+d1 %>%
+  mutate(diff = abs(總統-不分區)) 
+  
+
+lm( 不分區~總統, data=d1) %>% summary()
+
+
+d1 %>%
+  mutate(diff = abs(總統-不分區)) %>%
+  arrange(-diff) %>% 
+  mutate(diff_rank = if_else(diff > 5.24, str_c(縣市, 鄉鎮市區別), "")) %>%
+  ggplot() + aes(x=總統, y=不分區, label = diff_rank) +
+  geom_point(alpha=0.8, color="#1B9431") +
+  ggrepel::geom_text_repel(family="jf-jinxuan-3.0 medium", max.overlaps = 100) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +  # 添加 y=x 參考線
+  labs(
+    title = "數據看分裂投票：綠分裂投票不明顯",
+    subtitle = "整體趨勢總統票 > 不分區票，台南六區分裂投票情況較明顯",
+    caption = "註1:　紅線為投票率一致線，越接近紅線代表不分區與總統票得票率越一致\n註2:　 R-squared = 0.9949",
+    x = "賴清德候選人總統得票率（%）",
+    y = "民進黨不分區得票率（%）"
+  ) +
+  xlim(0, 70) +
+  ylim(0, 70) +
+  theme_bw() +
+  th
+```
+
+### 藍
+```{r fig.width=3, fig.height=3}
+d2 <- df_total_town %>%
+  filter(type=="不分區" | type =="總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率)) %>%
+  select(type, 縣市, 鄉鎮市區別, 政黨, 得票率) %>%
+  filter(政黨 == "得票率_中國國民黨") %>%
+  pivot_wider(names_from = "type", values_from = "得票率") %>%
+  filter(鄉鎮市區別 != "總計")
+
+
+lm( 不分區~總統, data=d2) %>% summary()
+
+d2 %>%
+  mutate(diff = abs(總統-不分區)) %>%
+  arrange(-diff)  %>% summary()
+
+d2 %>%
+  mutate(diff = abs(總統-不分區)) %>%
+  arrange(-diff) %>% 
+  mutate(diff_rank = if_else(diff > 6.3004, str_c(縣市, 鄉鎮市區別), "")) %>%
+  ggplot() + aes(x=總統, y=不分區, label = diff_rank) +
+  geom_point(alpha=0.8, color="#000095") +
+  ggrepel::geom_text_repel( family="jf-jinxuan-3.0 medium", max.overlaps = 200) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +  # 添加 y=x 參考線
+  labs(
+    title = "數據看分裂投票：藍分裂投票不明顯",
+    subtitle = "不分區票 > 總統票，少部分地區分裂投票較為明顯",
+    caption = "註1:　紅線為投票率一致線，越接近紅線代表不分區與總統票得票率越一致\n註2:　 R-squared = 0.9861",
+    x = "侯友宜候選人總統得票率（%）",
+    y = "國民黨不分區得票率（%）"
+  ) +
+  xlim(0, 70) +
+  ylim(0, 70) +
+  theme_bw() +
+  th
+```
+
+
+### 白
+```{r fig.width=3, fig.height=3}
+d3 <- df_total_town %>%
+  filter(type=="不分區" | type =="總統") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率)) %>%
+  select(type, 縣市, 鄉鎮市區別, 政黨, 得票率) %>%
+  filter(政黨 == "得票率_台灣民眾黨") %>%
+  pivot_wider(names_from = "type", values_from = "得票率") %>%
+  filter(鄉鎮市區別 != "總計")
+
+
+lm( 不分區~總統, data=d3) %>% summary()
+
+d3 %>%
+  mutate(diff = abs(總統-不分區)) %>%
+  arrange(-diff)  
+
+d3 %>%
+  mutate(diff = abs(總統-不分區)) %>%
+  arrange(-diff) %>% 
+  mutate(diff_rank = if_else(diff > 10, str_c(縣市, 鄉鎮市區別), "")) %>%
+  ggplot() + aes(x=總統, y=不分區, label = diff_rank) +
+  geom_point(alpha=0.8, color="#28C8C8") +
+  ggrepel::geom_text_repel( family="jf-jinxuan-3.0 medium", max.overlaps = 70) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +  # 添加 y=x 參考線
+  labs(
+    title = "數據看分裂投票：白分裂投票最為明顯",
+    subtitle = "總統票 > 不分區票，南部部份鄉鎮市區分裂投票明顯",
+    caption = "註1:　紅線為投票率一致線，越接近紅線代表不分區與總統票得票率越一致\n註2:　 R-squared = 0.8344",
+    x = "柯文哲候選人總統得票率（%）",
+    y = "民眾黨不分區得票率（%）"
+  ) +
+  theme_bw() +
+  xlim(0, 70) +
+  ylim(0, 70) +
+  th
+```
+
+## （指向圖）白：最死忠的十鄉鎮，票都去哪了？
+```{r fig.width=3, fig.height=3}
+d3_top05 <- d3 %>%
+  arrange(-總統) %>% head(5) %>% select(縣市, 鄉鎮市區別)
+
+d3_plot <- d3_top05 %>%
+  left_join(df_total_town %>% filter(type=="不分區" | type =="總統") %>% pivot_longer(cols = starts_with("得票率_"), names_to = "政黨", values_to = "得票率") %>% filter(!is.na(得票率)) %>% select(type, 縣市, 鄉鎮市區別, 政黨, 得票率)) %>%
+  mutate( name = str_c(縣市, 鄉鎮市區別))  %>% 
+  # filter( 鄉鎮市區別 == "東區") %>%
+  mutate( 政黨_new = if_else(str_detect(政黨, "台灣民眾黨|民主進步黨|中國國民黨|時代力量"), str_sub(政黨, 5), "其他")) %>%
+  select(縣市, 鄉鎮市區別, name, type, 政黨_new, 得票率) %>%
+  group_by(縣市, 鄉鎮市區別, name, type, 政黨_new) %>%
+  summarise( 得票率 = sum(得票率) ) %>% ungroup() %>%
+  pivot_wider(names_from = "type", values_from = "得票率") %>%
+  mutate(總統 = if_else(is.na(總統), 0, 總統)) %>%
+  mutate(不分區 = if_else(is.na(不分區), 0, 不分區)) #%>%
+  # mutate(diff = 總統 - 不分區) #%>%
+  # mutate(arrow = if_else(diff > 0, 不分區+1, 不分區-1) )
+
+
+d3_plot$政黨_new <- factor(d3_plot$政黨_new, levels = c( "民主進步黨", "其他","時代力量", "中國國民黨","台灣民眾黨"))
+
+d3_top05 <- d3_top05 %>% mutate(name = str_c(縣市, 鄉鎮市區別)  )
+d3_top05$name
+
+
+
+plot_list <- list()
+i <- 1
+for (line in unique(d3_top05$name) ) {
+  print(line)
+  
+  p <- d3_plot %>%
+  filter( name == line ) %>%
+  ggplot() + 
+  geom_point( aes(x=`總統`  , y=政黨_new, color=政黨_new), alpha=0.5, size=2 ) +
+  geom_point( aes(x=`不分區`, y=政黨_new, color=政黨_new), alpha=0.2, size=1, shape=15 ) +
+  geom_segment( aes(x=`總統`, xend=(不分區), y=政黨_new, yend=政黨_new, color=政黨_new), arrow = arrow(type = "open", length = unit(0.1, "inches")) ) +
+  scale_color_manual(
+      values = c(
+        "台灣民眾黨" = "#28C8C8",
+        "中國國民黨" = "#000095",
+        "民主進步黨" = "#1B9431",
+        "時代力量" = "#FBBD02"
+      )
+     ) +
+    xlim(0, 60) +
+  labs(
+    title = line,
+    y="",x=""
+    ) + theme_classic() +
+  theme(
+      plot.background = element_rect( fill = "#DDDDDD", colour = "#DDDDDD", size = 10 ),
+      panel.background = element_rect( fill = "#DDDDDD",  ),
+      plot.title = element_text(family="jf-jinxuan-3.0 ExtraBold", size=11),
+      plot.subtitle = element_text(family="jf-jinxuan-3.0 medium" ),
+      axis.title.y = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+      axis.title.x = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+      axis.text = element_text(family="jf-jinxuan-3.0 medium", size=9),
+      legend.position = "none",
+      plot.title.position = "plot", # 讓字從最左邊出現
+  )
+  plot_list[[i]] <- p
+  i = i + 1
+}
+
+
+p_combine <-  plot_list[[1]]
+for (j in c(2: length( d3_top05$name %>% unique() ) ) ) {
+  p_combine <- p_combine / plot_list[[j]]
+}
+p_combine &
+  theme(
+    plot.background = element_rect( fill = "#DDDDDD", color = "#DDDDDD" ),
+    panel.background = element_rect( fill = "#DDDDDD",  ),
+    
+  )
+  
+
+plot_list[[1]] + 
+```
+
+## （區段圖）白：最死忠的十鄉鎮，票都去哪了？
+```{r fig.width=3, fig.height=3}
+d3_top05 <- d3 %>%
+  arrange(-總統) %>% head(5) %>% select(縣市, 鄉鎮市區別)
+
+d3_plot <- d3_top05 %>%
+  left_join(df_total_town %>% filter(type=="不分區" | type =="總統") %>% pivot_longer(cols = starts_with("得票率_"), names_to = "政黨", values_to = "得票率") %>% filter(!is.na(得票率)) %>% select(type, 縣市, 鄉鎮市區別, 政黨, 得票率)) %>%
+  mutate( name = str_c(縣市, 鄉鎮市區別))  %>% 
+  # filter( 鄉鎮市區別 == "東區") %>%
+  mutate( 政黨_new = if_else(str_detect(政黨, "台灣民眾黨|民主進步黨|中國國民黨|時代力量"), str_sub(政黨, 5), "其他")) %>%
+  select(縣市, 鄉鎮市區別, name, type, 政黨_new, 得票率) %>%
+  group_by(縣市, 鄉鎮市區別, name, type, 政黨_new) %>%
+  summarise( 得票率 = sum(得票率) ) %>% ungroup() %>%
+  pivot_wider(names_from = "type", values_from = "得票率") %>%
+  mutate(總統 = if_else(is.na(總統), 0, 總統)) %>%
+  mutate(不分區 = if_else(is.na(不分區), 0, 不分區)) %>%
+  mutate(diff = round((不分區 - 總統), 2)) #%>%
+  # mutate(arrow = if_else(diff > 0, 不分區+1, 不分區-1) )
+
+
+d3_plot$政黨_new <- factor(d3_plot$政黨_new, levels = c( "民主進步黨", "其他","時代力量", "中國國民黨","台灣民眾黨"))
+
+d3_top05 <- d3_top05 %>% mutate(name = str_c(縣市, 鄉鎮市區別)  )
+d3_top05$name
+
+
+
+plot_list <- list()
+i <- 1
+for (line in unique(d3_top05$name) ) {
+  print(line)
+  
+  p <- d3_plot %>%
+  filter( name == line ) %>%
+  ggplot() + 
+  geom_point( aes(x=`總統`  , y=政黨_new, color=政黨_new), alpha=0.5, size=2 ) +
+  geom_point( aes(x=`不分區`, y=政黨_new, color=政黨_new), alpha=0.5, size=2 ) +
+  geom_segment( aes(x=`總統`, xend=(不分區), y=政黨_new, yend=政黨_new, color=政黨_new) ) + 
+   ggrepel::geom_text_repel( aes( x=`總統`, y=政黨_new, label = `diff` ) ) +
+  scale_color_manual(
+      values = c(
+        "台灣民眾黨" = "#28C8C8",
+        "中國國民黨" = "#000095",
+        "民主進步黨" = "#1B9431",
+        "時代力量" = "#FBBD02"
+      )
+     ) +
+    xlim(0, 60) +
+  labs(
+    title = line,
+    y="",x=""
+    ) + theme_classic() +
+  theme(
+      plot.background = element_rect( fill = "#DDDDDD", colour = "#DDDDDD", size = 10 ),
+      panel.background = element_rect( fill = "#DDDDDD",  ),
+      plot.title = element_text(family="jf-jinxuan-3.0 ExtraBold", size=11),
+      plot.subtitle = element_text(family="jf-jinxuan-3.0 medium" ),
+      axis.title.y = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+      axis.title.x = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+      axis.text = element_text(family="jf-jinxuan-3.0 medium", size=9),
+      legend.position = "none",
+      plot.title.position = "plot", # 讓字從最左邊出現
+  )
+  plot_list[[i]] <- p
+  i = i + 1
+}
+
+
+p_combine <-  plot_list[[1]]
+for (j in c(2: length( d3_top05$name %>% unique() ) ) ) {
+  p_combine <- p_combine / plot_list[[j]]
+}
+p_combine &
+  theme(
+    plot.background = element_rect( fill = "#DDDDDD", color = "#DDDDDD" ),
+    panel.background = element_rect( fill = "#DDDDDD",  ),
+    
+  )
+  
+```
+
+
+## （長條組圖）白：最死忠的十鄉鎮，票都去哪了？
+```{r}
+d3_top05 <- d3 %>%
+  arrange(-總統) %>% head(5) %>% select(縣市, 鄉鎮市區別)
+
+d3_plot <- d3_top05 %>%
+  left_join(df_total_town %>% filter(type=="不分區" | type =="總統") %>% pivot_longer(cols = starts_with("得票率_"), names_to = "政黨", values_to = "得票率") %>% filter(!is.na(得票率)) %>% select(type, 縣市, 鄉鎮市區別, 政黨, 得票率)) %>%
+  mutate( name = str_c(縣市, 鄉鎮市區別))  %>% 
+  # filter( 鄉鎮市區別 == "東區") %>%
+  mutate( 政黨_new = if_else(str_detect(政黨, "台灣民眾黨|民主進步黨|中國國民黨|時代力量"), str_sub(政黨, 5), "其他")) %>%
+  select(縣市, 鄉鎮市區別, name, type, 政黨_new, 得票率) %>%
+  group_by(縣市, 鄉鎮市區別, name, type, 政黨_new) %>%
+  summarise( 得票率 = sum(得票率) ) %>% ungroup() #%>%
+  # pivot_wider(names_from = "type", values_from = "得票率") %>%
+  # mutate(總統 = if_else(is.na(總統), 0, 總統)) %>%
+  # mutate(不分區 = if_else(is.na(不分區), 0, 不分區)) #%>%
+  # mutate(diff = 總統 - 不分區) #%>%
+  # mutate(arrow = if_else(diff > 0, 不分區+1, 不分區-1) )
+
+
+d3_plot$政黨_new <- factor(d3_plot$政黨_new, levels = c( "台灣民眾黨", "其他","時代力量", "中國國民黨","民主進步黨"))
+
+custom_order <- c( "其他", "時代力量","民主進步黨", "中國國民黨","台灣民眾黨")
+
+d3_top05 <- d3_top05 %>% mutate(name = str_c(縣市, 鄉鎮市區別)  )
+d3_top05$name
+
+
+# factor(政黨_new, levels = custom_order)
+d3_plot %>%
+  filter( name == "新竹縣竹北市") %>%
+  add_row(
+    tibble(
+      縣市 = "新竹縣",  # str_sub(1,3)
+      鄉鎮市區別 = "竹北市",  # str_sub(4,6)
+      name = "新竹縣竹北市",
+      type = "總統",
+      政黨_new = "時代力量",
+      得票率 = 0,
+      )
+  ) %>%add_row(
+    tibble(
+      縣市 = "新竹縣",  # str_sub(1,3)
+      鄉鎮市區別 = "竹北市",  # str_sub(4,6)
+      name = "新竹縣竹北市",
+      type = "總統",
+      政黨_new = "其他",
+      得票率 = 0,
+      )
+  ) %>%
+  ggplot() + aes(x=得票率, y=type, alpha=type, color=factor(政黨_new, levels = custom_order), fill=factor(政黨_new, levels = custom_order)) +
+  geom_col( ) + #position = "dodge2"
+  facet_wrap(~ 政黨_new, strip.position = "left", nrow=5, ncol=1) +
+  # geom_text( aes( label = type ), hjust = -1.5 ) +
+  scale_fill_manual(
+      values = c(
+        "中國國民黨" = "#000095",
+        "民主進步黨" = "#1B9431",
+        "台灣民眾黨" = "#28C8C8",
+        "時代力量" = "#FBBD02",
+        "其他" = "#666666"
+      )
+     ) +
+  scale_alpha_manual(
+    values = c(
+        "總統" = 0.9,
+        "不分區" = 0.1
+      )
+  ) +
+  scale_color_manual(
+    values = c(
+        "中國國民黨" = "#000095",
+        "民主進步黨" = "#1B9431",
+        "台灣民眾黨" = "#28C8C8",
+        "時代力量" = "#FBBD02",
+        "其他" = "#666666"
+      )
+  ) +
+    xlim(0, 60) + 
+  labs(
+    title = line,
+    y="",x=""
+    ) +
+  theme_classic()  +
+  theme(
+      plot.background = element_rect( fill = "#DDDDDD", colour = "#DDDDDD", size = 10 ),
+      panel.background = element_rect( fill = "#DDDDDD",  ),
+      plot.title = element_text(family="jf-jinxuan-3.0 ExtraBold", size=11),
+      plot.subtitle = element_text(family="jf-jinxuan-3.0 medium" ),
+      axis.title.y = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+      axis.title.x = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+      axis.text = element_text(family="jf-jinxuan-3.0 medium", size=9),
+      legend.position = "none",
+      plot.title.position = "plot", # 讓字從最左邊出現
+  )
+
+```
+
+
+
+## （長條圖）白：最死忠的十鄉鎮，票都去哪了？
+```{r fig.width=3, fig.height=2}
+d3_top06 <- d3 %>%
+  arrange(-總統) %>% head(6) %>% select(縣市, 鄉鎮市區別)
+
+d3_plot <- d3_top06 %>%
+  left_join(df_total_town %>% filter(type=="不分區" | type =="總統") %>% pivot_longer(cols = starts_with("得票率_"), names_to = "政黨", values_to = "得票率") %>% filter(!is.na(得票率)) %>% select(type, 縣市, 鄉鎮市區別, 政黨, 得票率)) %>%
+  mutate( name = str_c(縣市, 鄉鎮市區別))  %>% 
+  # filter( 鄉鎮市區別 == "東區") %>%
+  mutate( 政黨_new = if_else(str_detect(政黨, "台灣民眾黨|民主進步黨|中國國民黨|時代力量"), str_sub(政黨, 5), "其他")) %>%
+  select(縣市, 鄉鎮市區別, name, type, 政黨_new, 得票率) %>%
+  group_by(縣市, 鄉鎮市區別, name, type, 政黨_new) %>%
+  summarise( 得票率 = sum(得票率) ) %>% ungroup() #%>%
+  # pivot_wider(names_from = "type", values_from = "得票率") %>%
+  # mutate(總統 = if_else(is.na(總統), 0, 總統)) %>%
+  # mutate(不分區 = if_else(is.na(不分區), 0, 不分區)) #%>%
+  # mutate(diff = 總統 - 不分區) #%>%
+  # mutate(arrow = if_else(diff > 0, 不分區+1, 不分區-1) )
+
+
+d3_plot$政黨_new <- factor(d3_plot$政黨_new, levels = c( "台灣民眾黨", "其他","時代力量", "中國國民黨","民主進步黨"))
+
+custom_order <- c( "其他", "時代力量","民主進步黨", "中國國民黨","台灣民眾黨")
+
+d3_top06 <- d3_top06 %>% mutate(name = str_c(縣市, 鄉鎮市區別)  )
+d3_top06$name
+
+
+plot_list <- list()
+i <- 1
+
+
+for (line in unique(d3_top06$name) ) {
+  print(line)
+  
+    p <- d3_plot %>%
+    filter( name == line) %>%
+    add_row(
+      tibble(
+        縣市 = "新竹縣",  # str_sub(1,3)
+        鄉鎮市區別 = "竹北市",  # str_sub(4,6)
+        name = "新竹縣竹北市",
+        type = "總統",
+        政黨_new = "時代力量",
+        得票率 = 0,
+        )
+    ) %>%add_row(
+      tibble(
+        縣市 = "新竹縣",  # str_sub(1,3)
+        鄉鎮市區別 = "竹北市",  # str_sub(4,6)
+        name = "新竹縣竹北市",
+        type = "總統",
+        政黨_new = "其他",
+        得票率 = 0,
+        )
+    ) %>%
+    ggplot() + aes(x=得票率, y=factor(政黨_new, levels = custom_order), alpha=type, color=factor(政黨_new, levels = custom_order), fill=factor(政黨_new, levels = custom_order) ) +
+    geom_col( position = "dodge2" ) + #
+    scale_fill_manual(
+        values = c(
+          "中國國民黨" = "#000095",
+          "民主進步黨" = "#1B9431",
+          "台灣民眾黨" = "#28C8C8",
+          "時代力量" = "#FBBD02",
+          "其他" = "#666666"
+        )
+       ) +
+    scale_alpha_manual(
+      values = c(
+          "總統" = 0.9,
+          "不分區" = 0.1
+        )
+    ) +
+    scale_color_manual(
+      values = c(
+          "中國國民黨" = "#000095",
+          "民主進步黨" = "#1B9431",
+          "台灣民眾黨" = "#28C8C8",
+          "時代力量" = "#FBBD02",
+          "其他" = "#666666"
+        )
+    ) +
+      xlim(0, 60) + 
+    labs(
+      title = line,
+      y="",x=""
+      ) +
+    theme_classic()  +
+    theme(
+        plot.background = element_rect( fill = "#DDDDDD", colour = "#DDDDDD", size = 10 ),
+        panel.background = element_rect( fill = "#DDDDDD",  ),
+        plot.title = element_text(family="jf-jinxuan-3.0 ExtraBold", size=11),
+        plot.subtitle = element_text(family="jf-jinxuan-3.0 medium" ),
+        axis.title.y = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+        axis.title.x = element_text(family="jf-jinxuan-3.0 ExtraBold", size=10),
+        axis.text = element_text(family="jf-jinxuan-3.0 medium", size=9),
+        # legend.position = "none",
+        plot.title.position = "plot", # 讓字從最左邊出現
+    )
+  
+  
+  plot_list[[i]] <- p
+  i = i + 1
+
+}
+
+
+
+
+
+p_combine <-  plot_list[[1]]
+for (j in c(2: length( d3_top06$name %>% unique() ) ) ) {
+  p_combine <- p_combine + plot_list[[j]]
+}
+p_combine &
+  theme(
+    plot.background = element_rect( fill = "#DDDDDD", color = "#DDDDDD" ),
+    panel.background = element_rect( fill = "#DDDDDD",  ),
+    
+  )
+
+
+```
+
+
+## 小黨票倉在哪！
+
+
+### 地圖
+```{r fig.width=3, fig.height=3}
+small_party <- c("時代力量", "小民參政歐巴桑聯盟", "台灣綠黨", "台灣基進", "親民黨", "臺灣雙語無法黨")
+
+
+plot_npp <- df_total_town %>%
+  filter(type=="不分區") %>%
+  filter(鄉鎮市區別 != "總計") %>%
+  pivot_longer(cols = starts_with("得票率_"),
+               names_to = "政黨",
+               values_to = "得票率") %>% filter(!is.na(得票率)) %>%
+  select(type, 縣市, 鄉鎮市區別, 政黨, 得票率) %>%
+  filter( 政黨!= "得票率_台灣民眾黨" & 政黨!= "得票率_民主進步黨" & 政黨!= "得票率_中國國民黨"  ) %>%
+  mutate(政黨 = str_sub(政黨, 5)) %>% arrange(-得票率) %>%
+  mutate(name = str_c(縣市, 鄉鎮市區別)) %>%
+  filter(政黨 == small_party[3]) 
+
+
+## 長條圖
+plot_npp %>%
+  head(10) %>%
+  mutate(name = reorder(name, 得票率)) %>%
+  ggplot() + aes( x=得票率, y=name) + geom_col(fill="#66B57E") +
+  theme_classic() +
+  xlim(0, 10)  +
+  labs(
+    title="台灣綠黨第六大黨！",
+    subtitle="臺東蘭嶼得票率最高，其餘得票區域相對分散",
+    x="得票率(%)",
+    y=""
+  ) + th
+
+```
+
+
+### 地圖
+```{r fig.width=3, fig.height=3}
+
+
+# 設定經緯度的範圍
+### 台灣
+xlim <- c(119.5, 122.3)
+ylim <- c(21.5,25.8)
+# ### 金門
+# xlim <- c(117, 119)
+# ylim <- c(24,25)
+# ### 馬祖
+# xlim <- c(119, 121)
+# ylim <- c(25,27)
+
+
+sf_town %>%
+  left_join( plot_npp %>% select(county=縣市, town=鄉鎮市區別, everything()) ) %>%
+  ggplot(aes(fill = 得票率)) + geom_sf(color = NA) +
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+  scale_fill_gradient(low = "white", high = "#66B57E") + ggthemes::theme_map() +
+  theme(
+    legend.position="bottom",
+    plot.background = element_rect( fill = "#DDDDDD", colour = "#DDDDDD" ),
+    legend.background = element_rect( fill = "#DDDDDD", colour = "#111111" ),
+    legend.text = element_text(family="jf-jinxuan-3.0 medium"),
+    legend.title = element_text(family="jf-jinxuan-3.0 medium")
+  )
+
+```
+
+
+
+## 四腳督戰爭
+### Broader View
+
+#### 表重製
+```{r}
+#  因為柯美蘭無黨籍 所以要先用原始資料撈一下
+
+
+hsinchu_results <- df %>%
+ rename(c("台灣民眾黨" = "柯文哲得票數", "中國國民黨" = "侯友宜得票數", "民主進步黨" = "賴清德得票數")) %>%
+  mutate(type = "總統") %>% select(type, everything()) %>%
+  bind_rows(
+    df2 %>%
+      mutate(type = "不分區") 
+  ) %>% 
+  bind_rows(
+    df3 %>%
+      mutate(type = "分區") 
+  ) %>%   
+  filter(縣市=="新竹市") %>% 
+  select(1:30, `無_(4)王榮德`, `無_(3)柯美蘭`) %>%
+  mutate(
+    台灣民眾黨 = if_else(type == "分區", `無_(3)柯美蘭`, 台灣民眾黨)
+  ) %>%
+  group_by(type, 縣市, 鄉鎮市區別, 村里別) %>%
+  summarize( across(c(台灣民眾黨:選舉人數G, 小民參政歐巴桑聯盟:`無_(4)王榮德`), sum) ) %>%
+  ungroup() %>%
+  mutate(across(c(5:7, 15:29), ~ 100 * ./選舉人數G, .names = "催票率_{col}")) %>%
+  mutate(across(c(5:7, 15:29), ~ 100 * ./有效票數A, .names = "得票率_{col}"))
+
+
+hsinchu_results
+
+```
+#### 做圖
+
+```{r fig.width=3, fig.height=3}
+
+hsinchu_results_plot <- hsinchu_results %>%
+  # filter(鄉鎮市區別 == "東區") %>%
+  # filter( !str_detect(村里別, "總計")) %>%
+  pivot_longer(cols = c(5:7, 15:29),
+               names_to = "政黨",
+               values_to = "得票數") %>%
+  mutate( 政黨 = if_else(str_detect(政黨, "台灣民眾黨|民主進步黨|中國國民黨|時代力量"), 政黨, "其他")) %>%
+  select(type,縣市, 鄉鎮市區別, 村里別, 政黨, 得票數 ) %>% 
+  filter(鄉鎮市區別 != "總計") %>%
+  filter(村里別 != "村里總計") %>%
+  mutate(得票數 = replace_na(得票數, 0)) %>%
+  group_by(type, 縣市, 鄉鎮市區別, 村里別, 政黨) %>%
+  summarise(得票數=sum(得票數)) %>%
+  ungroup() %>%
+  mutate(name = str_c(縣市,str_trim(鄉鎮市區別),村里別)) %>%
+  select(type, name,縣市, 鄉鎮市區別, 村里別, 政黨, 得票數 ) 
+
+
+hsinchu_results_plot$type <- factor( hsinchu_results_plot$type, levels = c("分區", "不分區", "總統") )
+
+hsinchu_results_plot$政黨 <- factor( hsinchu_results_plot$政黨, levels = c("中國國民黨", "台灣民眾黨", "其他","時代力量", "民主進步黨") )
+
+d3_plot$政黨_new <- factor(d3_plot$政黨_new, levels = c( "民主進步黨", "其他","時代力量", "中國國民黨","台灣民眾黨"))
+
+
+hsinchu_results_plot %>% 
+  group_by(type, 縣市, 政黨) %>%
+  summarise( 得票數 = sum(得票數) ) %>%
+  ungroup() %>% 
+  group_by(type) %>%
+  mutate( 總得票 = sum(得票數)) %>%
+  transmute(縣市, 政黨, 得票數, 得票率 = round((得票數 / 總得票 * 100), 2) )  %>%
+  ungroup() %>%
+  ggplot() + aes(x=得票率, y=type, fill=政黨) + geom_col() +
+  scale_fill_manual(
+    values = c(
+      "中國國民黨" = "#000095",
+      "民主進步黨" = "#1B9431",
+      "台灣民眾黨" = "#28C8C8",
+      "時代力量" = "#FBBD02",
+      "其他" = "#666666"
+    )
+  ) + 
+  labs(
+    x="得票率(%)",
+    y="",
+    title="新竹市區域立委四腳督！",
+    subtitle="",
+    caption = "區域立委台灣民眾黨名義上雖無推派候選人，但輔選無黨籍柯美蘭。"
+  ) +
+  theme_classic() + th +
+  theme(
+    legend.position="none",
+    axis.text = element_text(size=20, colour = "black", family="jf-jinxuan-3.0 medium"),
+
+  )
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

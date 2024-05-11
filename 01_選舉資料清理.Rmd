@@ -1,0 +1,175 @@
+---
+title: "poll"
+author: "chiatzu"
+date: '2024-01-14'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(readxl)
+library(tidyverse)
+```
+
+```{r}
+folder_path <- "poll/2024/raw/總統副總統選舉"  # 替換成你實際的資料夾路徑
+
+excel_files <- list.files(folder_path, pattern = "\\.xlsx$", full.names = TRUE)
+
+df <- tibble()
+
+for (e in c(1:length(excel_files))) {
+  file <- excel_files[e]
+  print(file)
+  if (file %>% str_detect("\\$")) {next}
+  tmp_df <- read_excel(excel_files[e]) 
+  county <- file %>% str_sub(-9, -7)
+  colnames(tmp_df) <- c("鄉鎮市區別", "村里別", "投開票所別", "柯文哲得票數", "賴清德得票數", "侯友宜得票數", "有效票數A", "無效票數B", "投票數C", "已領未投票數D", "發出票數E", "用餘票數F", "選舉人數G", "投票率H")
+
+  tmp_df <- tmp_df %>% slice(-1:-4) %>%
+    mutate(縣市 = str_c(county) ) %>% select(`縣市`, everything()) %>%
+    mutate(`村里別`     = if_else( is.na(`村里別`),     "村里總計", `村里別`) ) %>%
+    mutate(`投開票所別` = if_else( is.na(`投開票所別`), `鄉鎮市區別`, `投開票所別`) ) %>%
+    mutate(`鄉鎮市區別` = if_else( 鄉鎮市區別 == "總　計", "總計", `鄉鎮市區別`)) %>%
+    mutate(`村里別` = if_else( 村里別 == "總計", `縣市`, `村里別`)) %>%
+    mutate(`投開票所別` = if_else( 投開票所別 == "總　計", `縣市`, `投開票所別`)) %>%
+    fill(`鄉鎮市區別`, .direction = "down") %>%
+    mutate_at(vars(5:ncol(tmp_df)), as.integer) %>% mutate(投票率H = as.double(投票率H))  
+  
+  df <- bind_rows(df, tmp_df)
+}
+
+df %>% write_csv("./poll/2024/2024_president_election.csv")
+```
+
+```{r}
+
+
+folder_path <- "poll/2024/raw/不分區立委"  # 替換成你實際的資料夾路徑
+
+excel_files <- list.files(folder_path, pattern = "\\.xlsx$", full.names = TRUE)
+
+df2<- tibble()
+
+for (e in c(1:length(excel_files))) {#length(excel_files)
+  file <- excel_files[e]
+  print(file)
+  if (file %>% str_detect("\\$")) {next}
+  tmp_df2 <- read_excel(excel_files[e]) 
+  county <- file %>% str_sub(-9, -7)
+  colnames(tmp_df2) <- c("鄉鎮市區別", "村里別", "投開票所別", "小民參政歐巴桑聯盟", "台灣綠黨", "臺灣雙語無法黨", "台灣基進", "中華統一促進黨", "民主進步黨", "制度救世島", "時代力量", "中國國民黨", "司法改革黨", "新黨", "台灣民眾黨", "台灣維新", "親民黨", "人民最大黨", "台灣團結聯盟", "有效票數A", "無效票數B", "投票數C", "已領未投票數D", "發出票數E", "用餘票數F", "選舉人數G", "投票率H")
+
+
+  tmp_df2 <- tmp_df2 %>% slice(-1:-4) %>%
+    mutate(縣市 = str_c(county) ) %>% select(`縣市`, everything()) %>%
+    mutate(`村里別`     = if_else( is.na(`村里別`),     "村里總計", `村里別`) ) %>%
+    mutate(`投開票所別` = if_else( is.na(`投開票所別`), `鄉鎮市區別`, `投開票所別`) ) %>%
+    mutate(`鄉鎮市區別` = if_else( 鄉鎮市區別 == "總　計", "總計", `鄉鎮市區別`)) %>%
+    mutate(`村里別` = if_else( 村里別 == "總計", `縣市`, `村里別`)) %>%
+    mutate(`投開票所別` = if_else( 投開票所別 == "總　計", `縣市`, `投開票所別`)) %>%
+    fill(`鄉鎮市區別`, .direction = "down") %>%
+    mutate_at(vars(5:ncol(tmp_df2)), as.integer) %>% mutate(投票率H = as.double(投票率H)) 
+  df2 <- bind_rows(df2, tmp_df2)
+}
+
+df2 %>% write_csv("./poll/2024/2024_legislator_election.csv")
+  
+```
+
+
+```{r}
+folder_path <- "poll/2024/raw/區域立委"  # 替換成你實際的資料夾路徑
+
+excel_files <- list.files(folder_path, pattern = "\\.xlsx$", full.names = TRUE)
+
+df3<- tibble()
+
+
+for (e in c(1:length(excel_files))) {#length(excel_files)
+  file <- excel_files[e]
+  print(file)
+  if (file %>% str_detect("\\$")) {next}
+  
+  for (sheet_name in excel_sheets(file)) { # sheet
+    print(sheet_name)
+    tmp_df3 <- read_excel(file, sheet = sheet_name) 
+    county <- file %>% str_sub(-9, -7)
+  
+    colnames(tmp_df3) <- ifelse(is.na(tmp_df3[2, ]), tmp_df3[1, ], tmp_df3[2, ]) %>% 
+      as.character() %>% str_remove("\n") %>% str_extract("[^\n]+$")
+  
+    if ('無' %in% colnames(tmp_df3)) { # 同一選區同黨籍超過一個人選舉可能出錯
+    # 將 '無' 的列名與第一列的名稱進行串聯並修改
+      col_index <- which(colnames(tmp_df3) == '無')
+      new_colname <- paste('無', '_', tmp_df3[2, col_index] %>%
+          str_replace_all("\n無", "") %>%
+          str_replace_all("\n", ""), sep = '')
+      colnames(tmp_df3)[col_index] <- new_colname
+    }
+    
+    if ('臺灣雙語無法黨' %in% colnames(tmp_df3)) {
+    # 將 '無' 的列名與第一列的名稱進行串聯並修改
+      col_index <- which(colnames(tmp_df3) == '臺灣雙語無法黨')
+      new_colname <- paste('臺灣雙語無法黨', '_', tmp_df3[2, col_index] %>%
+          str_replace_all("\n臺灣雙語無法黨", "") %>%
+          str_replace_all("\n", ""), sep = '')
+      colnames(tmp_df3)[col_index] <- new_colname
+    }
+    
+    if ('人民最大黨' %in% colnames(tmp_df3)) {
+    # 將 '無' 的列名與第一列的名稱進行串聯並修改
+      col_index <- which(colnames(tmp_df3) == '人民最大黨')
+      new_colname <- paste('人民最大黨', '_', tmp_df3[2, col_index] %>%
+          str_replace_all("\n人民最大黨", "") %>%
+          str_replace_all("\n", ""), sep = '')
+      colnames(tmp_df3)[col_index] <- new_colname
+    }
+  
+    tmp_df3 <- tmp_df3 %>% slice(-1:-4) %>%
+      rename(`鄉鎮市區別` = `鄉(鎮、市、區)別` ) %>%
+      rename(`投票率H` = `投票率HH=C÷G` ) %>%
+      rename(`有效票數A` = `有效票數AA=1+2+...+N` ) %>%
+      rename(`投票數C` = `投票數CC=A+B` ) %>%
+      rename(`已領未投票數D` = `D=E-C` ) %>%
+      rename(`發出票數E` = `發出票數EE=C+D` ) %>%
+      rename(`選舉人數G` = `選舉人數GG=E+F` ) %>%
+      mutate(縣市 = str_c(county) ) %>% select(`縣市`, everything()) %>%
+      mutate(`村里別`     = if_else( is.na(`村里別`),     "村里總計", `村里別`) ) %>%
+      mutate(`投開票所別` = if_else( is.na(`投開票所別`), `鄉鎮市區別`, `投開票所別`) ) %>%
+      mutate(`鄉鎮市區別` = if_else( 鄉鎮市區別 == "總　計", "總計", `鄉鎮市區別`)) %>%
+      mutate(`村里別` = if_else( 村里別 == "總計", `縣市`, `村里別`)) %>%
+      mutate(`投開票所別` = if_else( 投開票所別 == "總　計", `縣市`, `投開票所別`)) %>%
+      fill(`鄉鎮市區別`, .direction = "down") %>%
+      mutate_at(vars(5:ncol(tmp_df3)), as.integer) %>% mutate(投票率H = as.double(投票率H)) 
+    
+    df3 <- bind_rows(df3, tmp_df3)  
+  }
+}
+ 
+
+df3 %>% write_csv("./poll/2024/2024_legislator[local]_election.csv")
+
+df3 %>% filter(縣市 == "桃園市")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
